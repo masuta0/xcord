@@ -1,0 +1,197 @@
+// Prisma schema - Discord × X style social app
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  displayName    String
+  passwordHash   String
+  bio            String?
+  avatarUrl      String?
+  bannerUrl      String?
+  theme          String   @default("dark")
+  accentColor    String   @default("#5865F2")
+  isAdmin        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  posts          Post[]
+  likes          Like[]
+  reposts        Repost[]
+  comments       Comment[]
+
+  followers      Follow[] @relation("Following")
+  following      Follow[] @relation("Follower")
+
+  sentDMs        DirectMessage[] @relation("DMSender")
+  receivedDMs    DirectMessage[] @relation("DMReceiver")
+
+  notifications         Notification[] @relation("NotifRecipient")
+  triggeredNotifs       Notification[] @relation("NotifActor")
+
+  ownedServers   Server[]        @relation("ServerOwner")
+  memberships    ServerMember[]
+  channelMessages ChannelMessage[]
+
+  supportTickets SupportTicket[]
+}
+
+model Post {
+  id          String   @id @default(cuid())
+  content     String
+  imageUrl    String?
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Post?    @relation("PostReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     Post[]   @relation("PostReplies")
+  createdAt   DateTime @default(now())
+
+  likes       Like[]
+  reposts     Repost[]
+  comments    Comment[]
+
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+}
+
+model Repost {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  userId    String
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Follow {
+  id           String   @id @default(cuid())
+  followerId   String
+  followingId  String
+  follower     User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following    User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model DirectMessage {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  imageUrl   String?
+  read       Boolean  @default(false)
+  sender     User     @relation("DMSender",   fields: [senderId],   references: [id], onDelete: Cascade)
+  receiver   User     @relation("DMReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([senderId, receiverId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  type        String   // like, repost, follow, comment, mention, dm
+  recipientId String
+  actorId     String
+  entityId    String?  // post id, dm id, etc.
+  read        Boolean  @default(false)
+  recipient   User     @relation("NotifRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor       User     @relation("NotifActor",     fields: [actorId],     references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, read])
+}
+
+model Server {
+  id          String   @id @default(cuid())
+  name        String
+  iconUrl     String?
+  description String?
+  ownerId     String
+  owner       User     @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  channels    Channel[]
+  members     ServerMember[]
+}
+
+model ServerMember {
+  id        String   @id @default(cuid())
+  userId    String
+  serverId  String
+  role      String   @default("member") // owner, admin, member
+  user      User     @relation(fields: [userId],   references: [id], onDelete: Cascade)
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@unique([userId, serverId])
+}
+
+model Channel {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   @default("text") // text, voice(将来用)
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  messages  ChannelMessage[]
+}
+
+model ChannelMessage {
+  id        String   @id @default(cuid())
+  content   String
+  imageUrl  String?
+  channelId String
+  userId    String
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId],    references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([channelId, createdAt])
+}
+
+model SupportTicket {
+  id           String   @id @default(cuid())
+  username     String   // 復旧希望のユーザー名
+  contactInfo  String   // 連絡先(自由記述)
+  reason       String   // 本人証明のヒント
+  status       String   @default("open") // open, resolved, rejected
+  newPassword  String?  // 管理者がリセット後の一時PW
+  userId       String?  // 紐付いたユーザー
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  resolvedAt   DateTime?
+}
