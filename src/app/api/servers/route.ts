@@ -18,7 +18,7 @@ export async function GET() {
   return NextResponse.json(memberships.map((m) => ({ ...m.server, role: m.role })));
 }
 
-// サーバー作成
+// サーバー作成 (テキスト2 + ボイス1を自動生成)
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "未認証" }, { status: 401 });
@@ -37,6 +37,7 @@ export async function POST(req: Request) {
         create: [
           { name: "general", type: "text" },
           { name: "random", type: "text" },
+          { name: "ボイスチャット", type: "voice" },
         ],
       },
     },

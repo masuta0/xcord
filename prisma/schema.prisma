@@ -18,6 +18,7 @@ model User {
   bannerUrl      String?
   theme          String   @default("dark")
   accentColor    String   @default("#5865F2")
+  uiMode         String   @default("hybrid") // "discord" | "x" | "hybrid"
   isAdmin        Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -26,6 +27,9 @@ model User {
   likes          Like[]
   reposts        Repost[]
   comments       Comment[]
+  postReactions       PostReaction[]
+  channelReactions    ChannelReaction[]
+  dmReactions         DMReaction[]
 
   followers      Follow[] @relation("Following")
   following      Follow[] @relation("Follower")
@@ -41,12 +45,18 @@ model User {
   channelMessages ChannelMessage[]
 
   supportTickets SupportTicket[]
+
+  blocking       Block[] @relation("Blocker")
+  blockedBy      Block[] @relation("Blocked")
+  muting         Mute[]  @relation("Muter")
+  mutedBy        Mute[]  @relation("Muted")
 }
 
 model Post {
   id          String   @id @default(cuid())
   content     String
   imageUrl    String?
+  images      String[] @default([])
   authorId    String
   author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   parentId    String?
@@ -57,6 +67,7 @@ model Post {
   likes       Like[]
   reposts     Repost[]
   comments    Comment[]
+  reactions   PostReaction[]
 
   @@index([authorId])
   @@index([createdAt])
@@ -94,6 +105,45 @@ model Comment {
   createdAt DateTime @default(now())
 }
 
+// 投稿への絵文字リアクション
+model PostReaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  userId    String
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId, emoji])
+}
+
+// チャンネルメッセージへの絵文字リアクション
+model ChannelReaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  userId    String
+  messageId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   ChannelMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, messageId, emoji])
+}
+
+// DMへの絵文字リアクション
+model DMReaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  userId    String
+  messageId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, messageId, emoji])
+}
+
 model Follow {
   id           String   @id @default(cuid())
   followerId   String
@@ -105,16 +155,42 @@ model Follow {
   @@unique([followerId, followingId])
 }
 
+// ブロック(相互に非表示・DM/フォロー不可に)
+model Block {
+  id         String   @id @default(cuid())
+  blockerId  String
+  blockedId  String
+  blocker    User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked    User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+// ミュート(タイムラインから非表示にするだけ、相手には通知されない)
+model Mute {
+  id        String   @id @default(cuid())
+  muterId   String
+  mutedId   String
+  muter     User     @relation("Muter", fields: [muterId], references: [id], onDelete: Cascade)
+  muted     User     @relation("Muted", fields: [mutedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([muterId, mutedId])
+}
+
 model DirectMessage {
   id         String   @id @default(cuid())
   senderId   String
   receiverId String
   content    String
   imageUrl   String?
+  images     String[] @default([])
   read       Boolean  @default(false)
   sender     User     @relation("DMSender",   fields: [senderId],   references: [id], onDelete: Cascade)
   receiver   User     @relation("DMReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
+  reactions  DMReaction[]
 
   @@index([senderId, receiverId])
   @@index([createdAt])
@@ -122,10 +198,13 @@ model DirectMessage {
 
 model Notification {
   id          String   @id @default(cuid())
-  type        String   // like, repost, follow, comment, mention, dm
+  type        String   // like, repost, follow, comment, mention, dm, channel_message
   recipientId String
   actorId     String
-  entityId    String?  // post id, dm id, etc.
+  entityId    String?  // post id, dm id, channel id, etc.
+  serverId    String?  // channel_message の場合、遷移先を組み立てるためのサーバーID
+  contextLabel String? // 表示用の場所情報 例: "サーバー名 ・ #チャンネル名"
+  preview     String?  // メッセージ本文の先頭部分(通知一覧でのプレビュー用)
   read        Boolean  @default(false)
   recipient   User     @relation("NotifRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   actor       User     @relation("NotifActor",     fields: [actorId],     references: [id], onDelete: Cascade)
@@ -162,7 +241,7 @@ model ServerMember {
 model Channel {
   id        String   @id @default(cuid())
   name      String
-  type      String   @default("text") // text, voice(将来用)
+  type      String   @default("text") // "text" | "voice"
   serverId  String
   server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
@@ -174,11 +253,13 @@ model ChannelMessage {
   id        String   @id @default(cuid())
   content   String
   imageUrl  String?
+  images    String[] @default([])
   channelId String
   userId    String
   channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId],    references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  reactions ChannelReaction[]
 
   @@index([channelId, createdAt])
 }

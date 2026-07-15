@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "未認証" }, { status: 401 });
+
   const server = await prisma.server.findUnique({
     where: { id: params.id },
     include: {
@@ -16,5 +17,20 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     },
   });
   if (!server) return NextResponse.json({ error: "見つかりません" }, { status: 404 });
+
+  const isMember = server.members.some((m) => m.userId === session.user.id);
+  if (!isMember) return NextResponse.json({ error: "このサーバーのメンバーではありません" }, { status: 403 });
+
   return NextResponse.json(server);
+}
+
+// サーバー削除(オーナーのみ)
+export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return NextResponse.json({ error: "未認証" }, { status: 401 });
+  const server = await prisma.server.findUnique({ where: { id: params.id } });
+  if (!server) return NextResponse.json({ error: "見つかりません" }, { status: 404 });
+  if (server.ownerId !== session.user.id) return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+  await prisma.server.delete({ where: { id: params.id } });
+  return NextResponse.json({ ok: true });
 }

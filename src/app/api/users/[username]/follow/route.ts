@@ -11,6 +11,16 @@ export async function POST(_: Request, { params }: { params: { username: string 
   if (!target) return NextResponse.json({ error: "見つかりません" }, { status: 404 });
   if (target.id === session.user.id) return NextResponse.json({ error: "自分は不可" }, { status: 400 });
 
+  const block = await prisma.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: session.user.id, blockedId: target.id },
+        { blockerId: target.id, blockedId: session.user.id },
+      ],
+    },
+  });
+  if (block) return NextResponse.json({ error: "ブロック関係のためフォローできません" }, { status: 403 });
+
   const existing = await prisma.follow.findUnique({
     where: { followerId_followingId: { followerId: session.user.id, followingId: target.id } },
   });

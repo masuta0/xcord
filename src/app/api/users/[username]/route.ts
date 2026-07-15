@@ -15,12 +15,15 @@ export async function GET(_: Request, { params }: { params: { username: string }
   });
   if (!user) return NextResponse.json({ error: "見つかりません" }, { status: 404 });
 
-  let isFollowing = false;
+  let isFollowing = false, isBlocked = false, isMuted = false, blockedByThem = false;
   if (session?.user?.id && session.user.id !== user.id) {
-    const f = await prisma.follow.findUnique({
-      where: { followerId_followingId: { followerId: session.user.id, followingId: user.id } },
-    });
-    isFollowing = !!f;
+    const [f, b, m, bb] = await Promise.all([
+      prisma.follow.findUnique({ where: { followerId_followingId: { followerId: session.user.id, followingId: user.id } } }),
+      prisma.block.findUnique({ where: { blockerId_blockedId: { blockerId: session.user.id, blockedId: user.id } } }),
+      prisma.mute.findUnique({ where: { muterId_mutedId: { muterId: session.user.id, mutedId: user.id } } }),
+      prisma.block.findUnique({ where: { blockerId_blockedId: { blockerId: user.id, blockedId: session.user.id } } }),
+    ]);
+    isFollowing = !!f; isBlocked = !!b; isMuted = !!m; blockedByThem = !!bb;
   }
-  return NextResponse.json({ ...user, isFollowing });
+  return NextResponse.json({ ...user, isFollowing, isBlocked, isMuted, blockedByThem });
 }

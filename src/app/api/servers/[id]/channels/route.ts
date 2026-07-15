@@ -13,9 +13,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const body = await req.json();
   const name = String(body.name || "").slice(0, 40).trim();
+  const type = body.type === "voice" ? "voice" : "text";
   if (!name) return NextResponse.json({ error: "名前が必要" }, { status: 400 });
   const channel = await prisma.channel.create({
-    data: { name, serverId: params.id, type: body.type || "text" },
+    data: { name, serverId: params.id, type },
   });
   return NextResponse.json(channel);
 }

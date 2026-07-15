@@ -5,7 +5,7 @@ services:
     name: socialhub-web
     env: node
     plan: free
-    buildCommand: npm ci && npm run build && npx prisma db push --accept-data-loss && node prisma/seed.js
+    buildCommand: npm ci && npm run build && npx prisma migrate deploy && node prisma/seed.js
     startCommand: npm run start
     envVars:
       - key: DATABASE_URL
@@ -24,6 +24,12 @@ services:
         value: "admin1234"
       - key: NODE_VERSION
         value: "20"
+      - key: IMAGEKIT_PUBLIC_KEY
+        sync: false          # imagekit.io ダッシュボードの値をRender UIで設定
+      - key: IMAGEKIT_PRIVATE_KEY
+        sync: false          # 同上(秘密鍵。絶対にコードに書かない)
+      - key: IMAGEKIT_URL_ENDPOINT
+        sync: false          # 例: https://ik.imagekit.io/xxxxxxx
 
 databases:
   - name: socialhub-db

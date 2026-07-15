@@ -2,7 +2,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { usePathname } from "next/navigation";
-import { Home, Plus, Mail, Bell, Settings } from "lucide-react";
+import { Home, Plus, Mail, Bell, Settings, Compass } from "lucide-react";
 import { useState } from "react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -44,6 +44,7 @@ export default function ServerRail() {
         title="サーバーを作成">
         <Plus size={22} />
       </button>
+      <RailButton active={pathname === "/servers/discover"} href="/servers/discover" icon={<Compass size={22} />} title="サーバーを探す" />
       <div className="mt-auto">
         <RailButton active={pathname?.startsWith("/settings")} href="/settings" icon={<Settings size={22} />} title="設定" />
       </div>

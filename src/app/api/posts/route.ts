@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { extractMentions } from "@/lib/mentions";
 
 // タイムライン取得(最新順)
 export async function GET(req: Request) {
@@ -23,15 +24,35 @@ export async function GET(req: Request) {
     where.authorId = userId;
   }
 
+  // ミュート・ブロック中のユーザーの投稿を除外
+  if (session?.user?.id) {
+    const [mutes, blocks, blockedBy] = await Promise.all([
+      prisma.mute.findMany({ where: { muterId: session.user.id }, select: { mutedId: true } }),
+      prisma.block.findMany({ where: { blockerId: session.user.id }, select: { blockedId: true } }),
+      prisma.block.findMany({ where: { blockedId: session.user.id }, select: { blockerId: true } }),
+    ]);
+    const excludeIds = [
+      ...mutes.map((m) => m.mutedId),
+      ...blocks.map((b) => b.blockedId),
+      ...blockedBy.map((b) => b.blockerId),
+    ];
+    if (excludeIds.length > 0) {
+      where.authorId = where.authorId
+        ? { in: (where.authorId.in || []).filter((id: string) => !excludeIds.includes(id)) }
+        : { notIn: excludeIds };
+    }
+  }
+
   const posts = await prisma.post.findMany({
     where,
     orderBy: { createdAt: "desc" },
     take: 50,
     include: {
       author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
-      _count: { select: { likes: true, reposts: true, comments: true } },
+      _count: { select: { likes: true, reposts: true, replies: true } },
       likes:   session?.user?.id ? { where: { userId: session.user.id }, select: { id: true } } : false,
       reposts: session?.user?.id ? { where: { userId: session.user.id }, select: { id: true } } : false,
+      reactions: { select: { userId: true, emoji: true } },
     },
   });
 
@@ -51,19 +72,52 @@ export async function POST(req: Request) {
 
   const body = await req.json();
   const content = String(body.content || "").slice(0, 500);
-  if (!content.trim()) return NextResponse.json({ error: "内容が空です" }, { status: 400 });
+  if (!content.trim() && !(body.images?.length)) return NextResponse.json({ error: "内容が空です" }, { status: 400 });
+
+  const images: string[] = Array.isArray(body.images) ? body.images.slice(0, 4) : [];
 
   const post = await prisma.post.create({
     data: {
       content,
-      imageUrl: body.imageUrl || null,
+      imageUrl: images[0] || body.imageUrl || null,
+      images,
       authorId: session.user.id,
       parentId: body.parentId || null,
     },
     include: {
       author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
-      _count: { select: { likes: true, reposts: true, comments: true } },
+      _count: { select: { likes: true, reposts: true, replies: true } },
     },
   });
-  return NextResponse.json(post);
+
+  // 返信の場合: 元投稿の作者に通知
+  if (body.parentId) {
+    const parent = await prisma.post.findUnique({ where: { id: body.parentId }, select: { authorId: true } });
+    if (parent && parent.authorId !== session.user.id) {
+      await prisma.notification.create({
+        data: { type: "comment", recipientId: parent.authorId, actorId: session.user.id, entityId: post.id },
+      });
+    }
+  }
+
+  // @メンション通知
+  const mentionedUsernames = extractMentions(content);
+  if (mentionedUsernames.length > 0) {
+    const mentionedUsers = await prisma.user.findMany({
+      where: { username: { in: mentionedUsernames }, id: { not: session.user.id } },
+      select: { id: true },
+    });
+    if (mentionedUsers.length > 0) {
+      await prisma.notification.createMany({
+        data: mentionedUsers.map((u) => ({
+          type: "mention",
+          recipientId: u.id,
+          actorId: session.user.id,
+          entityId: post.id,
+        })),
+      });
+    }
+  }
+
+  return NextResponse.json({ ...post, reactions: [], liked: false, reposted: false });
 }

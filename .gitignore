@@ -1,10 +1,22 @@
-node_modules/
-.next/
-out/
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# env files (秘密鍵・DB接続情報などが入っているためコミットしない)
 .env
-.env.local
-.env.production
-*.log
+.env*.local
+
+# prisma
+/prisma/migrations/dev
+
+# misc
 .DS_Store
-.vscode/
-dist/
+*.pem
+npm-debug.log*
+tsconfig.tsbuildinfo

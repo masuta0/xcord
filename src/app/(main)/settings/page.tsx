@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
+import Link from "next/link";
+import { MessageSquare, Twitter, LayoutGrid } from "lucide-react";
+import { compressImage } from "@/lib/upload";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -13,9 +16,15 @@ const THEMES = [
   { id: "rose", name: "ローズ", color: "#2D1B24" },
 ];
 
+const UI_MODES = [
+  { id: "discord", name: "Discordモード", desc: "サーバー/チャンネル中心。サイドバーとボイスチャットを重視したレイアウト", icon: MessageSquare },
+  { id: "x", name: "Xモード", desc: "タイムライン中心。シンプルな投稿・フォロー体験を重視したレイアウト", icon: Twitter },
+  { id: "hybrid", name: "ハイブリッドモード(既定)", desc: "サーバーレール・タイムライン・DM全てを1画面に統合", icon: LayoutGrid },
+];
+
 export default function SettingsPage() {
   const { data: me, mutate } = useSWR("/api/me", fetcher);
-  const [tab, setTab] = useState<"profile" | "appearance" | "password">("profile");
+  const [tab, setTab] = useState<"profile" | "appearance" | "uimode" | "password" | "privacy">("profile");
   const [msg, setMsg] = useState("");
 
   const [displayName, setDisplayName] = useState("");
@@ -23,6 +32,7 @@ export default function SettingsPage() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [theme, setTheme] = useState("dark");
   const [accentColor, setAccentColor] = useState("#5865F2");
+  const [uiMode, setUiMode] = useState("hybrid");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPassword2, setNewPassword2] = useState("");
@@ -34,6 +44,7 @@ export default function SettingsPage() {
       setAvatarUrl(me.avatarUrl || "");
       setTheme(me.theme || "dark");
       setAccentColor(me.accentColor || "#5865F2");
+      setUiMode(me.uiMode || "hybrid");
       document.documentElement.className = me.theme || "dark";
       document.documentElement.style.setProperty("--accent", me.accentColor || "#5865F2");
     }
@@ -45,6 +56,10 @@ export default function SettingsPage() {
       body: JSON.stringify({ displayName, bio, avatarUrl }),
     });
     if (res.ok) { setMsg("プロフィールを保存しました"); mutate(); }
+  };
+  const handleAvatarFile = async (file: File) => {
+    const url = await compressImage(file, 1024, 0.92, "avatars");
+    setAvatarUrl(url);
   };
   const saveAppearance = async () => {
     const res = await fetch("/api/me", {
@@ -58,6 +73,14 @@ export default function SettingsPage() {
       localStorage.setItem("theme", theme);
       mutate();
     }
+  };
+  const saveUiMode = async (mode: string) => {
+    setUiMode(mode);
+    const res = await fetch("/api/me", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uiMode: mode }),
+    });
+    if (res.ok) { setMsg("UIモードを変更しました。反映のため画面をリロードします"); mutate(); setTimeout(() => location.reload(), 800); }
   };
   const changePassword = async () => {
     if (newPassword !== newPassword2) { setMsg("新パスワードが一致しません"); return; }
@@ -74,10 +97,12 @@ export default function SettingsPage() {
   return (
     <div className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto w-full">
       <h1 className="text-2xl font-bold mb-6">設定</h1>
-      <div className="flex gap-2 border-b border-app mb-6">
+      <div className="flex gap-2 border-b border-app mb-6 flex-wrap">
         <TabBtn active={tab === "profile"} onClick={() => setTab("profile")}>プロフィール</TabBtn>
         <TabBtn active={tab === "appearance"} onClick={() => setTab("appearance")}>外観・テーマ</TabBtn>
+        <TabBtn active={tab === "uimode"} onClick={() => setTab("uimode")}>UIモード</TabBtn>
         <TabBtn active={tab === "password"} onClick={() => setTab("password")}>パスワード</TabBtn>
+        <TabBtn active={tab === "privacy"} onClick={() => setTab("privacy")}>プライバシー</TabBtn>
       </div>
 
       {msg && <div className="mb-4 p-2 rounded bg-green-500/20 text-green-400 text-sm">{msg}</div>}
@@ -97,8 +122,13 @@ export default function SettingsPage() {
             <textarea className="input min-h-[100px]" value={bio} onChange={(e) => setBio(e.target.value)} maxLength={300} />
           </div>
           <div>
-            <label className="text-sm text-muted">アバターURL (画像リンク)</label>
-            <input className="input" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
+            <label className="text-sm text-muted">アバター画像</label>
+            <div className="flex items-center gap-3 mt-1">
+              <div className="w-16 h-16 rounded-full accent-bg flex items-center justify-center text-white text-xl font-bold overflow-hidden">
+                {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" alt="" /> : displayName?.[0]}
+              </div>
+              <input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && handleAvatarFile(e.target.files[0])} className="text-sm" />
+            </div>
           </div>
           <button className="btn" onClick={saveProfile}>保存</button>
         </div>
@@ -137,6 +167,26 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {tab === "uimode" && (
+        <div className="card space-y-3">
+          <p className="text-sm text-muted mb-2">アプリ全体のレイアウトと体験を切り替えます。切替後は自動でリロードされます。</p>
+          {UI_MODES.map((m) => {
+            const Icon = m.icon;
+            return (
+              <button key={m.id} onClick={() => saveUiMode(m.id)}
+                className={`w-full text-left p-4 rounded-lg border-2 flex items-start gap-3 transition-all
+                  ${uiMode === m.id ? "border-[var(--accent)] bg-[var(--accent)]/10" : "border-app hover:bg-tertiary"}`}>
+                <Icon size={24} className={uiMode === m.id ? "accent" : "text-muted"} />
+                <div>
+                  <div className="font-bold">{m.name}</div>
+                  <div className="text-sm text-muted">{m.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {tab === "password" && (
         <div className="card space-y-3">
           <div className="text-sm text-muted">
@@ -157,6 +207,13 @@ export default function SettingsPage() {
           <button className="btn" onClick={changePassword}>パスワードを変更</button>
         </div>
       )}
+
+      {tab === "privacy" && (
+        <div className="card space-y-3">
+          <p className="text-sm text-muted">ブロック・ミュートしているユーザーの一覧を管理できます。</p>
+          <Link href="/settings/blocked" className="btn-ghost border border-app inline-block">ブロック/ミュート一覧を見る</Link>
+        </div>
+      )}
     </div>
   );
 }
@@ -164,7 +221,7 @@ export default function SettingsPage() {
 function TabBtn({ active, children, onClick }: any) {
   return (
     <button onClick={onClick}
-      className={`px-4 py-2 text-sm border-b-2 transition-colors
+      className={`px-4 py-2 text-sm border-b-2 transition-colors whitespace-nowrap
         ${active ? "border-[var(--accent)] text-primary" : "border-transparent text-muted hover:text-primary"}`}>
       {children}
     </button>

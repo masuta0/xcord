@@ -11,7 +11,7 @@ export async function GET() {
     where: { id: session.user.id },
     select: {
       id: true, username: true, displayName: true, bio: true,
-      avatarUrl: true, bannerUrl: true, theme: true, accentColor: true, isAdmin: true,
+      avatarUrl: true, bannerUrl: true, theme: true, accentColor: true, uiMode: true, isAdmin: true,
     },
   });
   return NextResponse.json(user);
@@ -28,6 +28,7 @@ export async function PATCH(req: Request) {
   if (typeof body.bannerUrl === "string") data.bannerUrl = body.bannerUrl;
   if (typeof body.theme === "string") data.theme = body.theme;
   if (typeof body.accentColor === "string") data.accentColor = body.accentColor;
+  if (typeof body.uiMode === "string" && ["discord", "x", "hybrid"].includes(body.uiMode)) data.uiMode = body.uiMode;
 
   // パスワード変更(現行パスワード必須)
   if (body.newPassword) {
